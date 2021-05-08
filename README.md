@@ -1,1 +1,1 @@
-# nerual_compressor
+# neural_compressor
