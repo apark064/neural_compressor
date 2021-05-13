@@ -23,7 +23,9 @@ class CharPredictor(nn.Module):
         self.gru = nn.GRU(input_size = alph_size,
                           hidden_size = latent_size,
                           batch_first = True)    
-        self.lin = nn.Linear(latent_size, alph_size)
+        self.relu = nn.ReLU()
+        self.drop = nn.Dropout(p = 0.4)
+        self.lin = nn.Linear(latent_size, alph_size, bias = False)
 
     def forward(self, x, state = None):
         if state is None:
@@ -55,6 +57,3 @@ class TextData(Dataset):
 
     def __len__(self):
         return self.size
-            
-
-        

@@ -4,12 +4,19 @@ half = 0x800
 q3 = 0xc00 
 
 class Encoder:
-    def __init__(self,):
+    def __init__(self, model, file_name):
         self.low = 0
         self.high = 0xfff
-        self.bits = 0
+        self.n_bits = 0
         self.buffer = list()
 
+    def cum_prob(self, symbol):
+        pass
+
+    def write_bits(self, bit):
+        self.buffer.extend([bit] + self.n_bits*[not bit])
+        self.n_bits = 0
+        
     def encode_char(self, symbol, cum_prob):
         range = self.high - self.low
         high = self.low + range * cum_prob[symbol-1]
@@ -17,25 +24,35 @@ class Encoder:
 
         while True:
             if (high < half):
-                bits = 0
+                self.write_bits(0)
             elif (low >= half):
-                bits = 1
+                self.write_bits(1)
                 low -= half
                 high -= half
             elif (low >= q1 and high < q3):
-                bits += 1
+                n_bits += 1
                 low -= q1
                 high -= q1
             else:
                 break
+            
             low = 2*low
             high = 2*high + 1
+
 
 class Decoder:
     def __init__(self):
         self.low = 0
         self.high = 0xfff
-        self.bits
+        self.n_bits
+        self.buffer = list()
+
+    def load_bits(self):
+        if (len(self.buffer) < 16):
+            print("Buffer not filled")
+        for i in range(len(self.buffer)):
+            n_bit = 2 * n_bit + self.buffer(0)
+            self.buffer.pop(0)
 
     def decode(self, cum_prob):
         range = self.high - self.low
@@ -53,6 +70,5 @@ class Decoder:
                 high -= q1
             else: 
                 break
-
             low *= 2
             high = 2 * high + 1
