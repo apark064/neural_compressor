@@ -23,7 +23,6 @@ class CharPredictor(nn.Module):
         self.gru = nn.GRU(input_size = alph_size,
                           hidden_size = latent_size,
                           batch_first = True)    
-        self.relu = nn.ReLU()
         self.drop = nn.Dropout(p = 0.4)
         self.lin = nn.Linear(latent_size, alph_size, bias = False)
 
@@ -32,6 +31,7 @@ class CharPredictor(nn.Module):
             state = torch.zeros(x.size(0), x.size(1), self.latent_size)
         out, state = self.gru(x, state)
         out = self.lin(out.view(-1, self.latent_size))
+        out = self.drop(out)
         return out, state
 
 class TextData(Dataset):
