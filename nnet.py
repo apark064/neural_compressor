@@ -1,9 +1,3 @@
-import os
-import torch
-from torch import nn
-from torch.nn import functional as F 
-from torch.utils.data import Dataset
-
 ''' 
 Encoder:
     * train the nnet on file
@@ -14,46 +8,73 @@ Decoder:
     * decompress
 
 ''' 
+from collections import defaultdict
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+import torch.nn.functional as F
+import os
 
 class CharPredictor(nn.Module):
     def __init__(self, latent_size, alph_size):
         super(CharPredictor, self).__init__()
         self.latent_size = latent_size
         self.alph_size = alph_size
-        self.gru = nn.GRU(input_size = alph_size,
+        self.gru = nn.LSTM(input_size = alph_size,
                           hidden_size = latent_size,
-                          batch_first = True)    
-        self.drop = nn.Dropout(p = 0.4)
-        self.lin = nn.Linear(latent_size, alph_size, bias = False)
+                          batch_first = True)
+        self.lin = nn.Linear(latent_size,
+                             alph_size,
+                             bias = False)
 
-    def forward(self, x, state = None):
-        if state is None:
-            state = torch.zeros(x.size(0), x.size(1), self.latent_size)
+    def forward(self, x, state):
+        x = x.to(torch.float32)
+        for s in state:
+            s = s.to(torch.float32)
+
         out, state = self.gru(x, state)
-        out = self.lin(out.view(-1, self.latent_size))
-        out = self.drop(out)
+        out = self.lin(out.flatten(end_dim =1))
         return out, state
 
-class TextData(Dataset):
-    def __init__(self, file_name, context_len):
-        super(TextData, self).__init__()
-        self.context_len = context_len
-        assert os.path.exists(file_name)
-        file_size = os.path.get_size(file_name)
-        self.size = file_size - context_len
-        self.data = torch.Tensor(self.size, context_len)
-        self.target = torch.Tensor(self.size, 1)
-        
-        with open(file_name, 'rb') as file:
-            byte_arr = file.read(file_size)
+    def predict(self, x, state):
+        x, state = self.forward(x, state)
+        return F.softmax(x, dim=0), state
 
-        for i in range(self.size):
-            for j in range(context_len):
-                self.data[i][j] = byte_arr[i+j]
-            self.target[i] = byte_arr[i+context_len]
-            
+class TextData(Dataset):
+    def __init__(self, file_name, seq_len):
+        super(TextData, self).__init__()
+        assert os.path.exists(file_name)
+
+        self.alph = defaultdict(int)
+        with open(file_name, 'r') as file:
+            dat = file.read()
+            self.file_size = len(dat)
+            for char in dat:
+                self.alph[char] += 1
+
+        self.alph_size = len(self.alph)
+
+        # order characters by frequency
+        reorder = sorted(self.alph.keys(),
+                        key = lambda k: -self.alph[k])
+        self.token = {reorder[i] : i for i in range(len(reorder))}
+        self.inv_token = {i: reorder[i] for i in range(len(reorder))}
+
+        seqs = []
+        for i in range(seq_len, self.file_size, seq_len):
+            seqs.append(
+                self.tokenize(dat[i-seq_len:i])
+            )
+        self.seqs = torch.stack(seqs)
+
+    def tokenize(self, x):
+        return torch.tensor(
+            list( map(lambda k: self.token[k], x))
+        )
+
     def __getitem__(self,idx):
-        return self.data[idx], self.target[idx]
+        return F.one_hot(self.seqs[idx][:-1], self.alph_size).float(),\
+                self.seqs[idx][1:]
 
     def __len__(self):
-        return self.size
+        return self.seqs.size(0)
