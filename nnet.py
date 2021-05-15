@@ -20,7 +20,7 @@ class CharPredictor(nn.Module):
         super(CharPredictor, self).__init__()
         self.latent_size = latent_size
         self.alph_size = alph_size
-        self.gru = nn.LSTM(input_size = alph_size,
+        self.rnn = nn.LSTM(input_size = alph_size,
                           hidden_size = latent_size,
                           batch_first = True)
         self.lin = nn.Linear(latent_size,
@@ -32,7 +32,7 @@ class CharPredictor(nn.Module):
         for s in state:
             s = s.to(torch.float32)
 
-        out, state = self.gru(x, state)
+        out, state = self.rnn(x, state)
         out = self.lin(out.flatten(end_dim =1))
         return out, state
 
