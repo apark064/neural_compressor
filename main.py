@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from nnet import *
 import torch
+#from tqdm import trange 
+import codecs
 import argparse
 import os
 import sys
@@ -26,10 +28,12 @@ def train(net, dataset, epochs, **kwargs):
     
     losses = []
     for e in range(epochs):
-        state = ( torch.zeros((1,1,net.latent_size), device = device), 
-                torch.zeros((1,1,net.latent_size), device = device))
-        i = 0
-        for in_seq, targs in dataset:
+        print(f"EPOCH {e+1}")
+        state = ( torch.zeros((2,1,net.latent_size), device = device), 
+                torch.zeros((2,1,net.latent_size), device = device))
+
+        for i in range(len(dataset)):
+            in_seq, targs = dataset[i]
             for s in state:
                 s = s.to(device)
                 s.detach_()
@@ -41,7 +45,7 @@ def train(net, dataset, epochs, **kwargs):
 
             losses.append(loss.item())
             i += 1
-            if(i%99 == 0):
+            if(i % 99 == 0):
                 print( sum(losses)/100 )
                 losses = []
             
@@ -57,12 +61,13 @@ def encode(model, data):
     buffer = deque()
     n_bits = 0
     text = torch.flatten(data.seqs)
-
+    freq_est = [ freq/sum(dat.freqs) for freq in dat.freqs]
+    
     low = 0
     high = 0xfff
 
-    state = ( torch.zeros((1,1,model.latent_size), device = device), 
-            torch.zeros((1,1,model.latent_size), device = device))
+    state = ( torch.zeros((2,1,model.latent_size), device = device), 
+            torch.zeros((2,1,model.latent_size), device = device))
 
     n_bytes = 0
     for j in range(len(text)-1):
@@ -74,15 +79,17 @@ def encode(model, data):
         probs, state = model(x.reshape(1,1,-1), state)
         probs = F.softmax(probs.squeeze(0), dim=0)
         cum_prob = probs[:text[j+1]].sum()
+        prob = probs[text[j+1]].item()
 
-        #print(cum_prob.item())
-        #print(probs[text[j+1]].item())
+        # greedy switching
+        if prob < freq_est[text[j+1]]:
+            prob = freq_est[text[j+1]]
+            cum_prob = sum(freq_est[:text[j+1]])
 
-        low += int(d * cum_prob.item())
-        high = low + int( d* probs[text[j+1]].item())
+        low += int(d * cum_prob)
+        high = low + int(d * prob)
 
         while True:
-            #print(f'low: {low:0b} \t\t high: {high:0b}')
             assert low >= 0 and high < 0x1000
             if (high < half):
                 write_bits(False, n_bits, buffer)
@@ -114,11 +121,14 @@ def encode(model, data):
         
     print(n_bytes)
         
+def decode(model, data):
+    pass
+
 
 if __name__ == "__main__":
     dat = TextData(sys.argv[1],16)
     model = CharPredictor(256, dat.alph_size)
-    train(model, dat, 20)
+    train(model, dat, 40, lr = 1e-3)
     #model.to(device)
     model.eval()
     with torch.no_grad():

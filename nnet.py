@@ -9,6 +9,7 @@ Decoder:
 
 ''' 
 from collections import defaultdict
+import codecs
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -22,6 +23,7 @@ class CharPredictor(nn.Module):
         self.alph_size = alph_size
         self.rnn = nn.LSTM(input_size = alph_size,
                           hidden_size = latent_size,
+                          num_layers = 2,
                           batch_first = True)
         self.lin = nn.Linear(latent_size,
                              alph_size,
@@ -46,7 +48,7 @@ class TextData(Dataset):
         assert os.path.exists(file_name)
 
         self.alph = defaultdict(int)
-        with open(file_name, 'r') as file:
+        with codecs.open(file_name, mode='r', encoding="utf-8") as file:
             dat = file.read()
             self.file_size = len(dat)
             for char in dat:
@@ -60,6 +62,7 @@ class TextData(Dataset):
         self.token = {reorder[i] : i for i in range(len(reorder))}
         self.inv_token = {i: reorder[i] for i in range(len(reorder))}
 
+        self.freqs = [ self.alph[c] for c in reorder] 
         seqs = []
         for i in range(seq_len, self.file_size, seq_len):
             seqs.append(
