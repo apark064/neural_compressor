@@ -1,13 +1,3 @@
-''' 
-Encoder:
-    * train the nnet on file
-    * encode the file with arithmetic encoder
-    * send the weights (prob large af) and compressed file
-Decoder:
-    * load nnet with the weights
-    * decompress
-
-''' 
 from collections import defaultdict
 import codecs
 import torch
@@ -16,24 +6,22 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import os
 
-class CharPredictor(nn.Module):
-    def __init__(self, latent_size, alph_size):
-        super(CharPredictor, self).__init__()
+class CharLSTM(nn.Module):
+    def __init__(self, latent_size, alph_size=256, n_layers=2):
+        super(CharLSTM, self).__init__()
         self.latent_size = latent_size
         self.alph_size = alph_size
+        self.n_layers = n_layers
         self.rnn = nn.LSTM(input_size = alph_size,
                           hidden_size = latent_size,
                           num_layers = 2,
                           batch_first = True)
-        self.lin = nn.Linear(latent_size,
-                             alph_size,
-                             bias = False)
+        self.lin = nn.Linear(latent_size, alph_size,bias = False)
 
     def forward(self, x, state):
         x = x.to(torch.float32)
         for s in state:
             s = s.to(torch.float32)
-
         out, state = self.rnn(x, state)
         out = self.lin(out.flatten(end_dim =1))
         return out, state
@@ -41,43 +29,36 @@ class CharPredictor(nn.Module):
     def predict(self, x, state):
         x, state = self.forward(x, state)
         return F.softmax(x, dim=0), state
+    
+    def init_state(self):
+        return (torch.zeros(self.n_layers,1,net.latent_size),
+               torch.zeros(self.n_layers,1,net.latent_size))
 
-class TextData(Dataset):
-    def __init__(self, file_name, seq_len):
-        super(TextData, self).__init__()
-        assert os.path.exists(file_name)
+def tokenize(x, length):
+    return F.one_hot(x, length)
 
-        self.alph = defaultdict(int)
-        with codecs.open(file_name, mode='r', encoding="utf-8") as file:
-            dat = file.read()
-            self.file_size = len(dat)
-            for char in dat:
-                self.alph[char] += 1
-
-        self.alph_size = len(self.alph)
-
-        # order characters by frequency
-        reorder = sorted(self.alph.keys(),
-                        key = lambda k: -self.alph[k])
-        self.token = {reorder[i] : i for i in range(len(reorder))}
-        self.inv_token = {i: reorder[i] for i in range(len(reorder))}
-
-        self.freqs = [ self.alph[c] for c in reorder] 
-        seqs = []
-        for i in range(seq_len, self.file_size, seq_len):
-            seqs.append(
-                self.tokenize(dat[i-seq_len:i])
-            )
-        self.seqs = torch.stack(seqs)
-
-    def tokenize(self, x):
-        return torch.tensor(
-            list( map(lambda k: self.token[k], x))
-        )
-
-    def __getitem__(self,idx):
-        return F.one_hot(self.seqs[idx][:-1], self.alph_size).float(),\
-                self.seqs[idx][1:]
-
+class ExperienceReplay(Dataset):
+    def __init__(self, context_len=8, alph_len=256, max_size = 5000):
+        super(ExperienceReplay, self).__init__()
+        self.data = list()
+        self.alph_len = alph_len
+        self.ctx_len = context_len
+    
     def __len__(self):
-        return self.seqs.size(0)
+        return len(self.data)
+    
+    def __getitem__(self,idx):
+        return self.tokenize(self.data[idx], self.alph_len)
+    
+    def get_batch(self):
+        idxs = torch.randperm(self.__len__())
+        return torch.stack(
+            [self.tokenize(self.data[idx], self.alph_len) for idx in idxs],
+            dim = 0)
+    
+    def insert(self, context):
+        self.data.append(torch.LongTensor([ord(c) for c in context]))
+    
+    def forget(self, idx):
+        self.data.pop(idx)
+        
