@@ -7,16 +7,16 @@ import torch.nn.functional as F
 import os
 
 class CharLSTM(nn.Module):
-    def __init__(self, latent_size, alph_size=256, n_layers=2):
+    def __init__(self, latent_size, alph_len=256, **kwargs):
         super(CharLSTM, self).__init__()
         self.latent_size = latent_size
-        self.alph_size = alph_size
-        self.n_layers = n_layers
-        self.rnn = nn.LSTM(input_size = alph_size,
+        self.alph_len = alph_len
+        self.num_layers = kwargs.get("num_layers",2)
+        self.rnn = nn.LSTM(input_size = alph_len,
                           hidden_size = latent_size,
-                          num_layers = n_layers,
+                          num_layers = self.num_layers,
                           batch_first = True)
-        self.lin = nn.Linear(latent_size, alph_size, bias = True)
+        self.lin = nn.Linear(latent_size, alph_len, bias = True)
 
     def forward(self, x, state):
         x = x.to(torch.float32)
@@ -33,15 +33,17 @@ class CharLSTM(nn.Module):
         return F.softmax(out[-1], dim=0)
     
     def init_state(self, batch_size=1):
-        return (torch.zeros(self.n_layers, batch_size, self.latent_size),
-               torch.zeros(self.n_layers, batch_size, self.latent_size))
+        return (torch.zeros(self.num_layers, batch_size, self.latent_size),
+               torch.zeros(self.num_layers, batch_size, self.latent_size))
 
 class ExperienceReplay(Dataset):
-    def __init__(self, context_len=8, alph_len=256, max_size = 1028):
+    def __init__(self, alph, context_len=8, max_size = 1028):
         super(ExperienceReplay, self).__init__()
         self.data = list()
-        self.alph_len = alph_len
+        self.alph = alph
+        self.alph_len = len(alph) 
         self.ctx_len = context_len
+        self.max_size = max_size
 
     def __len__(self):
         return len(self.data)
@@ -55,10 +57,10 @@ class ExperienceReplay(Dataset):
         return self.tokenize(batch[:,:-1]), batch[:,1:]
 
     def insert(self, context):
-        self.data.append(torch.LongTensor([ord(c) for c in context]))
+        self.data.append(torch.LongTensor([self.alph[c] for c in context]))
 
         if self.__len__() >= self.max_size:
-            idxs = torch.randint(0,self.max_size//2,(self.max_size//4))
+            idxs = torch.randint(0,self.max_size//2,(self.max_size//4,))
             for idx in idxs:
                 self.forget(idx)
 

@@ -12,7 +12,8 @@ Q1 = 0x400
 HALF= 0x800 
 Q3= 0xc00 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 def bit_stream(f_name):
     f = open(f_name, 'rb')
@@ -20,7 +21,7 @@ def bit_stream(f_name):
     while byte != b'':
         b = f.read(1)
         n = int.from_bytes(b, 'big')
-        for i in range(j):
+        for i in range(b):
             yield (n >> i) & 1
     f.close()
 
@@ -49,7 +50,7 @@ def shift_left(queue, x):
     
 def file_stats(file_name):
     stats = defaultdict(int)
-    with open(file_name, 'r', encoding='utf-8') as f:
+    with codecs.open(file_name, mode='r', encoding='utf-8') as f:
         c = f.read(1)
         while c != '':
             stats[c] += 1
@@ -102,8 +103,8 @@ class Encoder:
         while len(self.out_buffer) >= 8:
             c = 0 
             for _ in range(8):
-                c += self.out_buffer.popleft()
                 c <<= 1
+                c += self.out_buffer.popleft()
             dat.append(c)
         return dat
 
@@ -118,40 +119,61 @@ class Decoder:
     def decode_char(self): 
         pass
 
-def main():
-    freq = file_stats(file_name)
-    model = CharLSTM(alph_len)
-    replay_data = ExperienceReplay(ctx_len, alph_len)
-
-
-def encode_file(file_name, alph, model, **kwargs):
+def encode_file(file_name, **kwargs):
     ctx_len = kwargs.get("ctx_len",8)
     lr = kwargs.get("lr", 5e-3)
+    out_file = kwargs.get("out_file", "ballsinmyface.zip")
     
-    n_bytes = sum(freqs.values())
-    freq_est = [ freq[c]/n_bytes for c in 
+    freq = file_stats(file_name)
+    alph_len = len(freq)
+    alph = { c : idx for idx, c in enumerate(freq.keys()) } 
+
+    n_bytes = sum(freq.values())
+    freq_est = [ freq[c]/n_bytes for c in freq]
+
+    model = CharLSTM(256, alph_len)
+    optimizer = torch.optim.AdamW(model.parameters(), lr = lr)
+    loss = nn.CrossEntropyLoss()
+
+    replay_data = ExperienceReplay(alph, ctx_len)
+    encoder = Encoder(alph_len)
+
     stream = codecs.open(file_name, mode='r', encoding='utf-8')
+    output = codecs.open(out_file, mode='wb')
     
     ctx = deque( list(stream.read(ctx_len)) )
     
-    for _ in range(n_bytes):
+    count = 0 
+
+    for _ in range(8):
+        count += 1
         replay_data.insert(ctx)
         next_chr  = stream.read(1)
         shift_left(ctx, next_chr)
 
-    for i in range(n_bytes):
+
+    for i in range(5000):
         replay_data.insert(ctx)
         with torch.no_grad():
             probs = model.predict(replay_data[-1])
             prob = probs[ alph[next_chr] ].item()
             cum_prob = probs[:alph[next_chr]].sum().item()
 
+        if prob < freq_est[alph[next_chr]]:
+            prob = freq_est[alph[next_chr]]
+            cum_prob = sum(freq_est[:alph[next_chr]])
+
+        print(f"{prob:.07f} {count}")
         encoder.encode_char(prob, cum_prob)
+        if len(encoder) > 64:
+            count += 8 
+            output.write(encoder.flush_buffer())
         
         ctx.popleft()
         ctx.append(next_chr)
         next_chr = stream.read(1)
         
         train(model, replay_data, optimizer, loss, epochs = min(i+1,10))
-        
+
+    output.close()
     stream.close()
