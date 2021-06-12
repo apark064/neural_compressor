@@ -4,7 +4,6 @@ Q1 = 0x4000
 HALF= 0x8000 
 Q3= 0xc000 
 
-
 class Encoder:
     def __init__(self, alph_len = 256):
         self.low = 0  
@@ -72,21 +71,23 @@ class Decoder:
 
         d = self.high - self.low +1
         self.low += int(cum_prob*d)
-        self.upper = self.low + int(prob*d)
+        self.high = self.low + int(prob*d)
         while True:
-            if self.low >= HALF:
+            if self.high < HALF:
+                pass
+            elif self.low >= HALF:
                 self.low -= HALF
-                self.upper -= HALF
+                self.high -= HALF
                 self.code -= HALF
-            elif self.low >= Q1 and self.upper < Q3:
+            elif self.low >= Q1 and self.high < Q3:
                 self.code -= Q1
                 self.low -= Q1
-                self.upper -= Q1
+                self.high -= Q1
             else:
                 break
-        self.low *= 2
-        self.upper = 2*self.upper +1
-        self.code = 2*self.code + self.buffer.popleft()
+            self.low *= 2
+            self.high = 2*self.high +1
+            self.code = 2*self.code + self.buffer.popleft()
     
     def decode(self, probs):
         i = 0
@@ -97,10 +98,13 @@ class Decoder:
             cum_prob += probs[i].item() 
             i += 1
         prob = probs[i].item()
-        if prob < 1/self.alph_len:
-            prob = 1/self.alph_len
-            i = int(cp*self.alph_len)
-            cum_prob = prob*i
+        #if prob < 1/self.alph_len:
+        #    prob = 1/self.alph_len
+        #    cum_prob = 0
+        #    i = 0
+        #    while cum_prob + prob < cp:
+        #        cum_prob += prob
+        #        i += 1
         
         return i, prob, cum_prob
 

@@ -90,7 +90,6 @@ def LSTM_compress(file_name, mode = "encode", **kwargs):
         idx_to_chr = { idx: c for idx, c in enumerate(alph)}
         init_ctx = stream.read(ctx_len).decode('utf-8')
 
-        logging.debug(f"ctx: {init_ctx}")
         output = open(out_file, 'w', encoding='utf-8')
         output.write(init_ctx)
         decoder = Decoder(alph_len)
@@ -100,6 +99,8 @@ def LSTM_compress(file_name, mode = "encode", **kwargs):
             decoder.insert_byte(stream.read(1))
         decoder.init_code()
         
+    logging.debug(f"ctx: {init_ctx}")
+    logging.debug(f"alph len: {alph_len}")
     # initialize LSTM 
     model = CharLSTM(300, alph_len, 
             embed_dim = 170,
@@ -125,24 +126,24 @@ def LSTM_compress(file_name, mode = "encode", **kwargs):
             next_chr = stream.read(1)
             prob = probs[ alph[next_chr] ].item()
             cum_prob = probs[:alph[next_chr]].sum().item()
-            if prob < 1/alph_len:
-                prob = 1/alph_len 
-                cum_prob = alph[next_chr]*prob
+            #if prob < 1/alph_len:
+            #    prob = 1/alph_len 
+            #    cum_prob = alph[next_chr]*prob
 
-            #logging.debug(f"{prob:.07f} {count}\{i}")
+            logging.debug(f"{prob:.06f} {cum_prob:.06f}")
             encoder.encode_char(prob, cum_prob)
             if len(encoder) > 256:
                 count += 32 
                 data = encoder.flush_buffer()
-                logging.debug(f"wrote {data}")
                 output.write(data)
 
         elif mode == "decode":
             idx, prob, cum_prob = decoder.decode(probs)
+            logging.debug(f"{prob:.05f} {cum_prob:.05f}")
 
             #fill bit buffer
-            if len(decoder) < 8:
-                for _ in range(8):
+            if len(decoder) < 128:
+                for _ in range(16):
                     byte = stream.read(1)
                     byte = '\x00' if byte == b'' else byte
                     decoder.insert_byte(byte)
