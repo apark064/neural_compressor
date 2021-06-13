@@ -98,22 +98,24 @@ class Decoder:
             cum_prob += probs[i].item() 
             i += 1
         prob = probs[i].item()
-        #if prob < 1/self.alph_len:
-        #    prob = 1/self.alph_len
-        #    cum_prob = 0
-        #    i = 0
-        #    while cum_prob + prob < cp:
-        #        cum_prob += prob
-        #        i += 1
-        
         return i, prob, cum_prob
+
 
     def init_code(self):
         self.code = 0
         for _ in range(16):
             self.code = 2*self.code +self.buffer.popleft()
 
-    def insert_byte(self, b):
-        c = int.from_bytes(b, byteorder="big")
+    def fill_buffer(bytestream, n):
+        for _ in range(n):
+            try:
+                byte = bytestream.read(1)
+                assert byte != b''
+            except:
+                byte = b'\x00'
+            self.insert_byte(byte)
+
+    def insert_byte(self, byte):
+        c = int.from_bytes(byte, byteorder="big")
         for j in reversed(range(8)):
             self.buffer.append( (c>>j)&1)
